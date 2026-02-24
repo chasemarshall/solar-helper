@@ -110,7 +110,7 @@ public class SolarHelperClient implements ClientModInitializer {
                 Matcher tagMatcher = tagPattern.matcher(body);
                 if (tagMatcher.find()) {
                     String latestVersion = tagMatcher.group(1);
-                    if (!latestVersion.equals(MOD_VERSION)) {
+                    if (isNewerVersion(latestVersion, MOD_VERSION)) {
                         // Notify player after they join a world (delay to make sure player exists)
                         scheduler.schedule(() -> {
                             MinecraftClient client = MinecraftClient.getInstance();
@@ -430,5 +430,27 @@ public class SolarHelperClient implements ClientModInitializer {
             case "/" -> b != 0 ? a / b : null;
             default -> null;
         };
+    }
+
+    /** Returns true if remote is a newer semver than current (e.g. "1.3.0" > "1.2.0"). */
+    private static boolean isNewerVersion(String remote, String current) {
+        try {
+            int[] r = parseVersion(remote);
+            int[] c = parseVersion(current);
+            for (int i = 0; i < 3; i++) {
+                if (r[i] > c[i]) return true;
+                if (r[i] < c[i]) return false;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private static int[] parseVersion(String version) {
+        String[] parts = version.split("\\.");
+        int[] nums = new int[3];
+        for (int i = 0; i < Math.min(parts.length, 3); i++) {
+            nums[i] = Integer.parseInt(parts[i]);
+        }
+        return nums;
     }
 }
