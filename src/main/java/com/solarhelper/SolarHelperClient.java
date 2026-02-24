@@ -255,7 +255,8 @@ public class SolarHelperClient implements ClientModInitializer {
                 if (now - lastSellallTime < config.sellallCooldownMs) return;
                 lastSellallTime = now;
 
-                delayedAction(0, () -> {
+                long sellDelay = 800 + ThreadLocalRandom.current().nextLong(400);
+                delayedAction(sellDelay, () -> {
                     MinecraftClient client = MinecraftClient.getInstance();
                     if (client.player != null) {
                         client.player.networkHandler.sendChatCommand("sellall");
