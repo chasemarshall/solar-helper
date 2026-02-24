@@ -337,7 +337,7 @@ public class SolarHelperClient implements ClientModInitializer {
                     String phrase = typeMatcher.group(1).trim();
 
                     // Simulate typing speed: ~80-150ms per character + base delay
-                    long perCharMs = 80 + ThreadLocalRandom.current().nextLong(70);
+                    long perCharMs = 40 + ThreadLocalRandom.current().nextLong(40);
                     long typingTime = phrase.length() * perCharMs;
                     long baseDelay = config.randomChallengeDelay();
                     long typeDelay = baseDelay + typingTime;

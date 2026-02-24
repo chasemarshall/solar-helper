@@ -23,11 +23,11 @@ public class SolarHelperConfig {
     public boolean autoTypeEnabled = true;
 
     // Delay settings (ms)
-    public int welcomeMinDelayMs = 2500;
-    public int welcomeMaxDelayMs = 3500;
-    public int challengeMinDelayMs = 3000;
-    public int challengeMaxDelayMs = 5000;
-    public int sellallCooldownMs = 3000;
+    public int welcomeMinDelayMs = 1000;
+    public int welcomeMaxDelayMs = 2000;
+    public int challengeMinDelayMs = 1500;
+    public int challengeMaxDelayMs = 3000;
+    public int sellallCooldownMs = 1500;
 
     public static SolarHelperConfig get() {
         if (INSTANCE == null) {
