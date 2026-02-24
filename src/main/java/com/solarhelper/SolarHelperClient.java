@@ -295,7 +295,7 @@ public class SolarHelperClient implements ClientModInitializer {
                     }
                     long answer = finalAnswer;
 
-                    long delayMs = config.randomChallengeDelay();
+                    long delayMs = mathDelay(a, op, b, config);
                     delayedAction(delayMs, () -> {
                         MinecraftClient client = MinecraftClient.getInstance();
                         if (client.player != null) {
@@ -359,11 +359,7 @@ public class SolarHelperClient implements ClientModInitializer {
                 if (typeMatcher.find()) {
                     String phrase = typeMatcher.group(1).trim();
 
-                    // Simulate typing speed: ~80-150ms per character + base delay
-                    long perCharMs = 40 + ThreadLocalRandom.current().nextLong(40);
-                    long typingTime = phrase.length() * perCharMs;
-                    long baseDelay = config.randomChallengeDelay();
-                    long typeDelay = baseDelay + typingTime;
+                    long typeDelay = typeDelay(phrase, config);
 
                     // ~25% chance to introduce a typo for phrases longer than 4 chars
                     String typed = phrase;
@@ -391,8 +387,91 @@ public class SolarHelperClient implements ClientModInitializer {
         }
     }
 
+    /**
+     * Human-like delay for math based on difficulty.
+     * Small + simple (5+3) = quick. Big numbers or multiply/divide = slower.
+     */
+    private long mathDelay(long a, String op, long b, SolarHelperConfig config) {
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        long base = config.challengeMinDelayMs;
+        long range = Math.max(0, config.challengeMaxDelayMs - config.challengeMinDelayMs);
+
+        // Digit complexity: more digits = harder to compute mentally
+        int digits = String.valueOf(a).length() + String.valueOf(b).length();
+        // 2 digits total (e.g. 5+3) → 0 extra, 4 digits (e.g. 12+34) → ~800ms, 6 digits → ~1600ms
+        long digitPenalty = Math.max(0, (digits - 2)) * (300 + rand.nextLong(100));
+
+        // Operation complexity
+        long opPenalty = switch (op) {
+            case "+", "-" -> 0;
+            case "*", "x" -> 800 + rand.nextLong(600);   // multiplication takes a sec
+            case "/" -> 1000 + rand.nextLong(800);         // division is hardest
+            default -> 0;
+        };
+
+        // Also simulate typing the answer — more digits in answer = more time
+        long answerLen = String.valueOf(Math.abs(a + b)).length(); // rough estimate
+        long typePenalty = answerLen * (60 + rand.nextLong(40));
+
+        return base + (range > 0 ? rand.nextLong(range) : 0) + digitPenalty + opPenalty + typePenalty;
+    }
+
+    /**
+     * Human-like delay for unscrambling based on word length.
+     * Short words are quick to spot, long words take real thinking time.
+     */
+    private long unscrambleDelay(String scrambled, SolarHelperConfig config) {
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        long base = config.challengeMinDelayMs;
+        long range = Math.max(0, config.challengeMaxDelayMs - config.challengeMinDelayMs);
+
+        int len = scrambled.length();
+        // 3-4 letters → fast, 5-6 → moderate, 7+ → you'd stare at it a while
+        long thinkTime;
+        if (len <= 4) {
+            thinkTime = 200 + rand.nextLong(300);          // easy, just glance
+        } else if (len <= 6) {
+            thinkTime = 800 + rand.nextLong(700);           // takes a moment
+        } else if (len <= 8) {
+            thinkTime = 1500 + rand.nextLong(1000);          // real thinking
+        } else {
+            thinkTime = 2500 + rand.nextLong(1500);          // long word, big pause
+        }
+
+        // Typing the answer
+        long typePenalty = len * (50 + rand.nextLong(40));
+
+        return base + (range > 0 ? rand.nextLong(range) : 0) + thinkTime + typePenalty;
+    }
+
+    /**
+     * Human-like delay for typing challenges.
+     * Reading time + per-character typing speed that varies.
+     */
+    private long typeDelay(String phrase, SolarHelperConfig config) {
+        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        long base = config.challengeMinDelayMs;
+        long range = Math.max(0, config.challengeMaxDelayMs - config.challengeMinDelayMs);
+
+        // Reading time — longer phrases take longer to read before you start typing
+        int words = phrase.split("\\s+").length;
+        long readTime = words * (150 + rand.nextLong(100)); // ~150-250ms per word to read
+
+        // Typing speed: ~40-80ms per character with occasional pauses
+        long typingTime = 0;
+        for (int i = 0; i < phrase.length(); i++) {
+            typingTime += 40 + rand.nextLong(40);
+            // ~10% chance of a small pause mid-typing (like hesitating or looking back)
+            if (rand.nextInt(10) == 0) {
+                typingTime += 200 + rand.nextLong(300);
+            }
+        }
+
+        return base + (range > 0 ? rand.nextLong(range) : 0) + readTime + typingTime;
+    }
+
     private void sendUnscrambleAnswer(String scrambled, String answer, SolarHelperConfig config) {
-        long delay = config.randomChallengeDelay();
+        long delay = unscrambleDelay(scrambled, config);
         delayedAction(delay, () -> {
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null) {
