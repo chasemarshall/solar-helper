@@ -30,6 +30,15 @@ public class SolarHelperConfig {
     // OpenRouter API key (optional, used as fallback for unscrambling)
     public String openRouterApiKey = "";
 
+    // Visuals
+    public boolean playerOutlinesEnabled = false;
+    public boolean headOutlinesEnabled = true;
+
+    // Auto Farm
+    public boolean autoFarmEnabled = true;
+    public int autoFarmRotationIntervalMs = 10000;
+    public boolean autoFarmRotateRight = true;
+
     // Delay settings (ms)
     public int welcomeMinDelayMs = 1000;
     public int welcomeMaxDelayMs = 2000;

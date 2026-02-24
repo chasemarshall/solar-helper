@@ -3,7 +3,9 @@
   "package": "com.solarhelper.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "KeyboardInputMixin"
+    "KeyboardInputMixin",
+    "GameRendererMixin",
+    "EntityGlowMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -1,8 +1,12 @@
 package com.solarhelper;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import org.slf4j.Logger;
@@ -30,7 +34,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.4.0";
+    private static final String MOD_VERSION = "1.5.0";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
@@ -55,13 +59,89 @@ public class SolarHelperClient implements ClientModInitializer {
     );
 
     private static volatile boolean inputFrozen = false;
+    private static volatile boolean autoFarmActive = false;
+    private static volatile boolean autoFarmWasActive = false; // tracks previous state for key release
+    private static volatile boolean autoFarmPaused = false;    // brief pause after rotation
+    private static long autoFarmPauseEndNs = 0;
+    private static final long AUTO_FARM_PAUSE_NS = 150_000_000L; // 150ms pause after each rotation
+    private long autoFarmTickCounter = 0;
+    // Smooth rotation state (frame-based, not tick-based)
+    private static float rotationTarget = 0f;     // total degrees for current rotation
+    private static float rotationApplied = 0f;    // degrees applied so far
+    private static long rotationStartTimeNs = 0;  // when the rotation started
+    private static final long ROTATION_DURATION_NS = 750_000_000L; // 0.75 seconds in nanoseconds
 
     public static boolean isInputFrozen() {
         return inputFrozen;
     }
 
+    public static boolean isAutoFarmActive() {
+        if (autoFarmPaused && System.nanoTime() >= autoFarmPauseEndNs) {
+            autoFarmPaused = false;
+        }
+        // Also pause auto-farm when input is frozen (mod is sending a chat message)
+        return autoFarmActive && !autoFarmPaused && !inputFrozen;
+    }
+
+    /** Called every frame by GameRendererMixin to apply smooth rotation. */
+    public static void tickRotation() {
+        if (rotationTarget == 0f) return;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return;
+
+        long elapsed = System.nanoTime() - rotationStartTimeNs;
+        float progress = Math.min(1.0f, (float) elapsed / ROTATION_DURATION_NS);
+        // Sine ease-in-out for smooth acceleration and deceleration
+        float eased = (float) (-(Math.cos(Math.PI * progress) - 1.0) / 2.0);
+        float targetApplied = rotationTarget * eased;
+        float step = targetApplied - rotationApplied;
+        client.player.setYaw(client.player.getYaw() + step);
+        rotationApplied = targetApplied;
+
+        // Done
+        if (progress >= 1.0f) {
+            // Snap any remaining floating point error
+            float correction = rotationTarget - rotationApplied;
+            if (Math.abs(correction) > 0.01f) {
+                client.player.setYaw(client.player.getYaw() + correction);
+            }
+            rotationTarget = 0f;
+            rotationApplied = 0f;
+            // Brief pause so the player doesn't mine the same block it just turned away from
+            autoFarmPaused = true;
+            autoFarmPauseEndNs = System.nanoTime() + AUTO_FARM_PAUSE_NS;
+        }
+    }
+
+    /** Stops auto-farm and releases all keys. */
+    public static void stopAutoFarm() {
+        if (autoFarmActive) {
+            autoFarmActive = false;
+            autoFarmWasActive = true;
+            rotationTarget = 0f;
+            rotationApplied = 0f;
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.options != null) {
+                client.options.attackKey.setPressed(false);
+            }
+        }
+    }
+
+    /** Called by mixin each tick when auto-farm is NOT active, to release stuck keys once. */
+    public static void releaseAutoFarmKeys() {
+        if (autoFarmWasActive) {
+            autoFarmWasActive = false;
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.options != null) {
+                client.options.attackKey.setPressed(false);
+            }
+        }
+    }
+
     private long lastSellallTime = 0;
     private long lastWelcomeTime = 0;
+
+    private KeyBinding autoFarmKeybind;
 
     // Single shared thread for all delayed actions
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -78,6 +158,17 @@ public class SolarHelperClient implements ClientModInitializer {
     public void onInitializeClient() {
         LOGGER.info("Solar Helper v{} loaded!", MOD_VERSION);
 
+        // Register head outline renderer
+        HeadOutlineRenderer.register();
+
+        // Register auto-farm keybind (R key, rebindable in Options > Controls > Misc)
+        autoFarmKeybind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.solarhelper.autofarm",
+            InputUtil.Type.KEYSYM,
+            InputUtil.GLFW_KEY_R,
+            KeyBinding.Category.MISC
+        ));
+
         // Load dictionary + check for updates in background
         scheduler.execute(this::loadDictionary);
         scheduler.execute(this::checkForUpdates);
@@ -91,6 +182,71 @@ public class SolarHelperClient implements ClientModInitializer {
         // Also listen for chat messages in case it comes through as player chat
         ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, receptionTimestamp) -> {
             handleMessage(message.getString());
+        });
+
+        // Tick handler for auto-farm toggle + rotation + head click dismiss
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            SolarHelperConfig config = SolarHelperConfig.get();
+
+            // Check if player clicked a highlighted head to dismiss it
+            HeadOutlineRenderer.checkClickDismiss();
+
+            // Toggle auto-farm on keybind press
+            if (autoFarmKeybind.wasPressed()) {
+                if (!config.autoFarmEnabled) {
+                    sendLocalNotification(Text.empty()
+                        .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                        .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Auto Farm is disabled in settings.").formatted(Formatting.RED))
+                    );
+                    return;
+                }
+                boolean wasOn = autoFarmActive;
+                autoFarmActive = !autoFarmActive;
+                // If we just turned it off, mark wasActive so the mixin releases attack key
+                autoFarmWasActive = wasOn;
+                autoFarmTickCounter = 0;
+                rotationTarget = 0f;
+                rotationApplied = 0f;
+
+                if (autoFarmActive) {
+                    sendLocalNotification(Text.empty()
+                        .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                        .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Auto Farm ").formatted(Formatting.WHITE))
+                        .append(Text.literal("ON").formatted(Formatting.GREEN, Formatting.BOLD))
+                    );
+                } else {
+                    // Immediately release attack key to prevent stuck left click
+                    if (client.options != null) {
+                        client.options.attackKey.setPressed(false);
+                    }
+                    sendLocalNotification(Text.empty()
+                        .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                        .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Auto Farm ").formatted(Formatting.WHITE))
+                        .append(Text.literal("OFF").formatted(Formatting.RED, Formatting.BOLD))
+                    );
+                }
+            }
+
+            // Rotation timer (triggers rotation; actual smooth movement is in tickRotation per-frame)
+            if (autoFarmActive && client.player != null) {
+                autoFarmTickCounter++;
+                long intervalTicks = config.autoFarmRotationIntervalMs / 50;
+                if (intervalTicks < 1) intervalTicks = 1;
+
+                // Only start a new rotation if the previous one is done
+                if (autoFarmTickCounter >= intervalTicks && rotationTarget == 0f) {
+                    autoFarmTickCounter = 0;
+                    rotationTarget = config.autoFarmRotateRight ? 180f : -180f;
+                    rotationApplied = 0f;
+                    rotationStartTimeNs = System.nanoTime();
+                }
+            }
         });
     }
 
@@ -222,6 +378,23 @@ public class SolarHelperClient implements ClientModInitializer {
     private void handleMessage(String text) {
         SolarHelperConfig config = SolarHelperConfig.get();
         long now = System.currentTimeMillis();
+
+        // If someone mentions our username in chat, stop auto-farm for safety
+        if (autoFarmActive) {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null) {
+                String username = mc.player.getNameForScoreboard();
+                if (text.contains(username)) {
+                    stopAutoFarm();
+                    sendLocalNotification(Text.empty()
+                        .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                        .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("Auto Farm stopped — your name was mentioned in chat.").formatted(Formatting.RED))
+                    );
+                }
+            }
+        }
 
         // Quick pre-checks before expensive regex
         if (text.contains("[Welcome]") && config.welcomeEnabled) {
@@ -418,30 +591,27 @@ public class SolarHelperClient implements ClientModInitializer {
 
     /**
      * Human-like delay for unscrambling based on word length.
-     * Short words are quick to spot, long words take real thinking time.
+     * Most people solve even longer words (trapdoor, difference) in ~2-3 seconds.
      */
     private long unscrambleDelay(String scrambled, SolarHelperConfig config) {
         ThreadLocalRandom rand = ThreadLocalRandom.current();
-        long base = config.challengeMinDelayMs;
-        long range = Math.max(0, config.challengeMaxDelayMs - config.challengeMinDelayMs);
 
         int len = scrambled.length();
-        // 3-4 letters → fast, 5-6 → moderate, 7+ → you'd stare at it a while
         long thinkTime;
         if (len <= 4) {
-            thinkTime = 200 + rand.nextLong(300);          // easy, just glance
+            thinkTime = 1200 + rand.nextLong(400);
         } else if (len <= 6) {
-            thinkTime = 800 + rand.nextLong(700);           // takes a moment
-        } else if (len <= 8) {
-            thinkTime = 1500 + rand.nextLong(1000);          // real thinking
+            thinkTime = 1500 + rand.nextLong(500);
+        } else if (len <= 9) {
+            thinkTime = 2000 + rand.nextLong(800);
         } else {
-            thinkTime = 2500 + rand.nextLong(1500);          // long word, big pause
+            thinkTime = 2500 + rand.nextLong(900);
         }
 
         // Typing the answer
-        long typePenalty = len * (50 + rand.nextLong(40));
+        long typePenalty = len * (40 + rand.nextLong(30));
 
-        return base + (range > 0 ? rand.nextLong(range) : 0) + thinkTime + typePenalty;
+        return thinkTime + typePenalty;
     }
 
     /**
