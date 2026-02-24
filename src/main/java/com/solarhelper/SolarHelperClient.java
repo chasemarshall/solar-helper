@@ -142,7 +142,7 @@ public class SolarHelperClient implements ClientModInitializer {
     }
 
     private void loadDictionary() {
-        try (InputStream is = getClass().getResourceAsStream("/data/solarhelper/words.txt")) {
+        try (InputStream is = getClass().getResourceAsStream("/solarhelper/words.txt")) {
             if (is == null) {
                 LOGGER.error("Could not find words.txt dictionary!");
                 return;
