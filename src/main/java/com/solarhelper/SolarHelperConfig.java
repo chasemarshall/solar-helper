@@ -22,7 +22,8 @@ public class SolarHelperConfig {
     public boolean unscrambleEnabled = true;
     public boolean autoTypeEnabled = true;
 
-    // Human-like mistakes
+    // Human-like behavior
+    public boolean freezeInputEnabled = true;
     public boolean typosEnabled = false;
     public boolean mathFuzzEnabled = true;
 

@@ -7,6 +7,9 @@
   "authors": ["Chase"],
   "license": "MIT",
   "environment": "client",
+  "mixins": [
+    "solarhelper.mixins.json"
+  ],
   "entrypoints": {
     "client": ["com.solarhelper.SolarHelperClient"],
     "modmenu": ["com.solarhelper.SolarHelperModMenu"]

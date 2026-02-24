@@ -54,6 +54,12 @@ public class SolarHelperClient implements ClientModInitializer {
         "The first to type\\s+(.+?)\\s+wins!"
     );
 
+    private static volatile boolean inputFrozen = false;
+
+    public static boolean isInputFrozen() {
+        return inputFrozen;
+    }
+
     private long lastSellallTime = 0;
     private long lastWelcomeTime = 0;
 
@@ -194,7 +200,23 @@ public class SolarHelperClient implements ClientModInitializer {
 
     private void delayedAction(long delayMs, Runnable action) {
         MinecraftClient client = MinecraftClient.getInstance();
-        scheduler.schedule(() -> client.execute(action), delayMs, TimeUnit.MILLISECONDS);
+        SolarHelperConfig config = SolarHelperConfig.get();
+
+        if (config.freezeInputEnabled && delayMs > 0) {
+            // Freeze a bit before the message is sent (simulate stopping to type)
+            long freezeLeadMs = Math.min(delayMs, 800 + ThreadLocalRandom.current().nextLong(400));
+            long freezeAt = delayMs - freezeLeadMs;
+
+            scheduler.schedule(() -> client.execute(() -> inputFrozen = true), freezeAt, TimeUnit.MILLISECONDS);
+            scheduler.schedule(() -> client.execute(() -> {
+                action.run();
+                // Unfreeze shortly after sending
+                scheduler.schedule(() -> client.execute(() -> inputFrozen = false),
+                    200 + ThreadLocalRandom.current().nextLong(300), TimeUnit.MILLISECONDS);
+            }), delayMs, TimeUnit.MILLISECONDS);
+        } else {
+            scheduler.schedule(() -> client.execute(action), delayMs, TimeUnit.MILLISECONDS);
+        }
     }
 
     private void handleMessage(String text) {
