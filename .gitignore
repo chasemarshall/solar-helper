@@ -1,0 +1,17 @@
+# Gradle
+.gradle/
+build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Runtime
+run/
+
+# Firebase
+firebase-debug.log
