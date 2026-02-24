@@ -298,7 +298,26 @@ public class SolarHelperClient implements ClientModInitializer {
                     String scrambled = unscrambleMatcher.group(1);
                     String answer = unscramble(scrambled);
 
-                    if (answer == null) {
+                    if (answer != null) {
+                        sendUnscrambleAnswer(scrambled, answer, config);
+                    } else if (!config.openRouterApiKey.isBlank()) {
+                        // Dictionary failed — try AI fallback in background
+                        scheduler.execute(() -> {
+                            String aiAnswer = aiUnscramble(scrambled, config.openRouterApiKey);
+                            if (aiAnswer != null) {
+                                sendUnscrambleAnswer(scrambled, aiAnswer, config);
+                            } else {
+                                MinecraftClient c = MinecraftClient.getInstance();
+                                c.execute(() -> sendLocalNotification(Text.empty()
+                                    .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                                    .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                                    .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                                    .append(Text.literal("Could not unscramble: ").formatted(Formatting.WHITE))
+                                    .append(Text.literal(scrambled).formatted(Formatting.RED, Formatting.ITALIC))
+                                ));
+                            }
+                        });
+                    } else {
                         delayedAction(0, () -> sendLocalNotification(Text.empty()
                             .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
                             .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
@@ -306,26 +325,7 @@ public class SolarHelperClient implements ClientModInitializer {
                             .append(Text.literal("Could not unscramble: ").formatted(Formatting.WHITE))
                             .append(Text.literal(scrambled).formatted(Formatting.RED, Formatting.ITALIC))
                         ));
-                        return;
                     }
-
-                    long unscrambleDelay = config.randomChallengeDelay();
-                    delayedAction(unscrambleDelay, () -> {
-                        MinecraftClient client = MinecraftClient.getInstance();
-                        if (client.player != null) {
-                            client.player.networkHandler.sendChatMessage(answer);
-                            sendLocalNotification(Text.empty()
-                                .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
-                                .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
-                                .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
-                                .append(Text.literal("Unscrambled: ").formatted(Formatting.WHITE))
-                                .append(Text.literal(scrambled).formatted(Formatting.GRAY, Formatting.ITALIC))
-                                .append(Text.literal(" -> ").formatted(Formatting.WHITE))
-                                .append(Text.literal(answer).formatted(Formatting.GREEN, Formatting.ITALIC))
-                                .append(Text.literal("!").formatted(Formatting.WHITE))
-                            );
-                        }
-                    });
                     return;
                 }
             }
@@ -366,6 +366,68 @@ public class SolarHelperClient implements ClientModInitializer {
                 }
             }
         }
+    }
+
+    private void sendUnscrambleAnswer(String scrambled, String answer, SolarHelperConfig config) {
+        long delay = config.randomChallengeDelay();
+        delayedAction(delay, () -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player != null) {
+                client.player.networkHandler.sendChatMessage(answer);
+                sendLocalNotification(Text.empty()
+                    .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                    .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Unscrambled: ").formatted(Formatting.WHITE))
+                    .append(Text.literal(scrambled).formatted(Formatting.GRAY, Formatting.ITALIC))
+                    .append(Text.literal(" -> ").formatted(Formatting.WHITE))
+                    .append(Text.literal(answer).formatted(Formatting.GREEN, Formatting.ITALIC))
+                    .append(Text.literal("!").formatted(Formatting.WHITE))
+                );
+            }
+        });
+    }
+
+    private String aiUnscramble(String scrambled, String apiKey) {
+        try {
+            HttpClient http = HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(5))
+                .build();
+
+            String jsonBody = "{\"model\":\"google/gemini-2.0-flash-001\","
+                + "\"messages\":[{\"role\":\"user\",\"content\":\"Unscramble this word: " + scrambled
+                + ". Reply with ONLY the unscrambled word, nothing else.\"}],"
+                + "\"max_tokens\":32,\"temperature\":0}";
+
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://openrouter.ai/api/v1/chat/completions"))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .timeout(java.time.Duration.ofSeconds(8))
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                // Parse the answer from: "content":"word"
+                Pattern contentPattern = Pattern.compile("\"content\"\\s*:\\s*\"([^\"]+)\"");
+                Matcher contentMatcher = contentPattern.matcher(response.body());
+                // Skip the first match (the user message), get the assistant response
+                if (contentMatcher.find() && contentMatcher.find()) {
+                    String result = contentMatcher.group(1).trim().toLowerCase().replaceAll("[^a-z]", "");
+                    if (!result.isEmpty()) {
+                        LOGGER.info("AI unscrambled '{}' -> '{}'", scrambled, result);
+                        return result;
+                    }
+                }
+            } else {
+                LOGGER.warn("OpenRouter API returned status {}", response.statusCode());
+            }
+        } catch (Exception e) {
+            LOGGER.warn("AI unscramble failed: {}", e.getMessage());
+        }
+        return null;
     }
 
     // Keyboard neighbors for realistic fat-finger typos

@@ -22,6 +22,9 @@ public class SolarHelperConfig {
     public boolean unscrambleEnabled = true;
     public boolean autoTypeEnabled = true;
 
+    // OpenRouter API key (optional, used as fallback for unscrambling)
+    public String openRouterApiKey = "";
+
     // Delay settings (ms)
     public int welcomeMinDelayMs = 1000;
     public int welcomeMaxDelayMs = 2000;

@@ -8,6 +8,7 @@ import dev.isxander.yacl3.api.OptionDescription;
 import dev.isxander.yacl3.api.YetAnotherConfigLib;
 import dev.isxander.yacl3.api.controller.BooleanControllerBuilder;
 import dev.isxander.yacl3.api.controller.IntegerSliderControllerBuilder;
+import dev.isxander.yacl3.api.controller.StringControllerBuilder;
 import net.minecraft.text.Text;
 
 public class SolarHelperModMenu implements ModMenuApi {
@@ -90,6 +91,16 @@ public class SolarHelperModMenu implements ModMenuApi {
                         .binding(defaults.sellallCooldownMs, () -> config.sellallCooldownMs, v -> config.sellallCooldownMs = v)
                         .controller(opt -> IntegerSliderControllerBuilder.create(opt).range(1000, 10000).step(100)
                             .formatValue(v -> Text.literal(v + "ms")))
+                        .build())
+                    .build())
+                .category(ConfigCategory.createBuilder()
+                    .name(Text.literal("API"))
+                    .tooltip(Text.literal("Configure external API settings"))
+                    .option(Option.<String>createBuilder()
+                        .name(Text.literal("OpenRouter API Key"))
+                        .description(OptionDescription.of(Text.literal("Optional. Used as a fallback when the local dictionary can't unscramble a word. Get a key at openrouter.ai")))
+                        .binding(defaults.openRouterApiKey, () -> config.openRouterApiKey, v -> config.openRouterApiKey = v)
+                        .controller(StringControllerBuilder::create)
                         .build())
                     .build())
                 .save(config::save)
