@@ -395,9 +395,12 @@ public class SolarHelperClient implements ClientModInitializer {
                 .build();
 
             String jsonBody = "{\"model\":\"google/gemini-2.0-flash-001\","
-                + "\"messages\":[{\"role\":\"user\",\"content\":\"Unscramble this word: " + scrambled
-                + ". Reply with ONLY the unscrambled word, nothing else.\"}],"
-                + "\"max_tokens\":32,\"temperature\":0}";
+                + "\"messages\":["
+                + "{\"role\":\"system\",\"content\":\"You are a word unscrambling tool. "
+                + "You MUST respond with exactly ONE word and NOTHING else. "
+                + "No punctuation, no explanation, no extra text. Just the single unscrambled English word.\"},"
+                + "{\"role\":\"user\",\"content\":\"" + scrambled + "\"}"
+                + "],\"max_tokens\":16,\"temperature\":0}";
 
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://openrouter.ai/api/v1/chat/completions"))
@@ -410,12 +413,15 @@ public class SolarHelperClient implements ClientModInitializer {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
-                // Parse the answer from: "content":"word"
+                // Grab the last "content" match — that's the assistant's reply
                 Pattern contentPattern = Pattern.compile("\"content\"\\s*:\\s*\"([^\"]+)\"");
                 Matcher contentMatcher = contentPattern.matcher(response.body());
-                // Skip the first match (the user message), get the assistant response
-                if (contentMatcher.find() && contentMatcher.find()) {
-                    String result = contentMatcher.group(1).trim().toLowerCase().replaceAll("[^a-z]", "");
+                String lastContent = null;
+                while (contentMatcher.find()) {
+                    lastContent = contentMatcher.group(1);
+                }
+                if (lastContent != null) {
+                    String result = lastContent.trim().toLowerCase().replaceAll("[^a-z]", "");
                     if (!result.isEmpty()) {
                         LOGGER.info("AI unscrambled '{}' -> '{}'", scrambled, result);
                         return result;
