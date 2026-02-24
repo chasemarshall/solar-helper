@@ -22,6 +22,10 @@ public class SolarHelperConfig {
     public boolean unscrambleEnabled = true;
     public boolean autoTypeEnabled = true;
 
+    // Human-like mistakes
+    public boolean typosEnabled = false;
+    public boolean mathFuzzEnabled = true;
+
     // OpenRouter API key (optional, used as fallback for unscrambling)
     public String openRouterApiKey = "";
 

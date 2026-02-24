@@ -265,7 +265,7 @@ public class SolarHelperClient implements ClientModInitializer {
 
                     // ~20% chance to be off by 1-3 to look more human
                     long finalAnswer = correctAnswer;
-                    if (ThreadLocalRandom.current().nextInt(5) == 0) {
+                    if (config.mathFuzzEnabled && ThreadLocalRandom.current().nextInt(5) == 0) {
                         int fuzz = ThreadLocalRandom.current().nextInt(1, 4);
                         if (ThreadLocalRandom.current().nextBoolean()) fuzz = -fuzz;
                         finalAnswer += fuzz;
@@ -344,7 +344,7 @@ public class SolarHelperClient implements ClientModInitializer {
 
                     // ~25% chance to introduce a typo for phrases longer than 4 chars
                     String typed = phrase;
-                    if (phrase.length() > 4 && ThreadLocalRandom.current().nextInt(4) == 0) {
+                    if (config.typosEnabled && phrase.length() > 4 && ThreadLocalRandom.current().nextInt(4) == 0) {
                         typed = addTypo(phrase);
                     }
                     String finalTyped = typed;
