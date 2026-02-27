@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.6.5";
+    private static final String MOD_VERSION = "1.6.6";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
@@ -592,7 +592,9 @@ public class SolarHelperClient implements ClientModInitializer {
                     .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
                     .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
                     .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
-                    .append(Text.literal("Auto Farm stopped — press R to resume.").formatted(Formatting.GRAY))
+                    .append(Text.literal("Auto Farm stopped — press ").formatted(Formatting.GRAY))
+                    .append(autoFarmKeybind.getBoundKeyLocalizedText().copy().formatted(Formatting.WHITE))
+                    .append(Text.literal(" to resume.").formatted(Formatting.GRAY))
                 );
             }
 
