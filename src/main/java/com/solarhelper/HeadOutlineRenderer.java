@@ -129,6 +129,17 @@ public class HeadOutlineRenderer {
         }
     }
 
+    /** Returns a copy of the current cached head positions. */
+    public static Set<BlockPos> getHeadPositions() {
+        return new HashSet<>(cachedHeadPositions);
+    }
+
+    /** Programmatically dismiss a head (used by Head Seeker after interacting). */
+    public static void dismissHead(BlockPos pos) {
+        dismissedHeads.add(pos);
+        cachedHeadPositions.remove(pos);
+    }
+
     /** Clear dismissed heads when changing worlds. */
     public static void clearDismissed() {
         dismissedHeads.clear();

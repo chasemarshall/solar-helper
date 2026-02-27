@@ -24,8 +24,10 @@ public class DropperSolver {
     private static final double HORIZONTAL_DRAG = 0.91;
     private static final double AIR_ACCEL       = 0.02; // base horizontal acceleration per tick in air
 
-    // Ticks to simulate ahead when scoring each combo
-    private static final int LOOKAHEAD = 40;
+    // Ticks to simulate ahead when scoring each combo.
+    // 200 ticks ≈ 10 s of freefall, covering ~400+ blocks — enough for any dropper map.
+    // The loop exits early once water is hit, so performance is fine for short droppers too.
+    private static final int LOOKAHEAD = 200;
 
     // Player AABB (feet position, centered on X/Z)
     private static final double PLAYER_HALF_W = 0.3;  // 0.6 wide total
@@ -164,8 +166,9 @@ public class DropperSolver {
             double cx = sumX / count;
             double cz = sumZ / count;
             double horizDist = Math.sqrt((cx - px) * (cx - px) + (cz - pz) * (cz - pz));
-            // Lower score = better: proximity dominates, pool size is a minor tiebreaker
-            double score = horizDist - count * 0.2;
+            // Lower score = better. Size is weighted heavily so the main landing pool
+            // (large) always beats a small decorative water block that happens to be closer.
+            double score = horizDist - count * 1.5;
 
             if (score < bestScore) {
                 bestScore = score;
@@ -176,24 +179,29 @@ public class DropperSolver {
         return bestCenter;
     }
 
-    /** Scans downward in expanding rings, returning one seed per column that has water.
-     *  Stops as soon as any ring yields water, so the closest pool is always preferred. */
+    /**
+     * Scans ALL columns within r=0..10 and collects every distinct water block found,
+     * not just the first per column. This ensures decorative water above the real landing
+     * pool doesn't hide it: both pools get a seed, and BFS scoring picks the best one.
+     */
     private static List<BlockPos> collectSeeds(ClientWorld world, int sx, int sy, int sz) {
         List<BlockPos> seeds = new ArrayList<>();
         for (int r = 0; r <= 10; r++) {
             for (int dx = -r; dx <= r; dx++) {
                 for (int dz = -r; dz <= r; dz++) {
                     if (r > 0 && Math.abs(dx) != r && Math.abs(dz) != r) continue;
-                    for (int dy = 1; dy <= 300; dy++) {
+                    boolean inWater = false;
+                    for (int dy = 1; dy <= 400; dy++) {
                         BlockPos pos = new BlockPos(sx + dx, sy - dy, sz + dz);
-                        if (world.getBlockState(pos).getFluidState().isIn(FluidTags.WATER)) {
+                        boolean isWater = world.getBlockState(pos).getFluidState().isIn(FluidTags.WATER);
+                        // Add a seed at the first block of each distinct water stretch
+                        if (isWater && !inWater) {
                             seeds.add(pos);
-                            break; // one seed per column
                         }
+                        inWater = isWater;
                     }
                 }
             }
-            if (!seeds.isEmpty()) break; // stop at innermost ring that has water
         }
         return seeds;
     }
