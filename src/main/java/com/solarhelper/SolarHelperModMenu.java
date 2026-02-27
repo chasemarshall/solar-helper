@@ -254,6 +254,12 @@ public class SolarHelperModMenu implements ModMenuApi {
                         .binding(defaults.headSeekEnabled, () -> config.headSeekEnabled, v -> config.headSeekEnabled = v)
                         .controller(BooleanControllerBuilder::create)
                         .build())
+                    .option(Option.<Boolean>createBuilder()
+                        .name(Text.literal("Chest ESP"))
+                        .description(OptionDescription.of(Text.literal("Show cyan outlines around chests, barrels, and shulker boxes, visible through walls")))
+                        .binding(defaults.chestEspEnabled, () -> config.chestEspEnabled, v -> config.chestEspEnabled = v)
+                        .controller(BooleanControllerBuilder::create)
+                        .build())
                     .build())
 
                 // ── API ─────────────────────────────────────────────────────

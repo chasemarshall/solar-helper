@@ -37,6 +37,7 @@ public class SolarHelperConfig {
     public boolean playerOutlinesEnabled = false;
     public boolean headOutlinesEnabled = true;
     public boolean headSeekEnabled = false;
+    public boolean chestEspEnabled = true;
 
     // Auto Island (/is menu)
     public boolean autoIslandEnabled = true;

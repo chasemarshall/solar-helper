@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.7.0";
+    private static final String MOD_VERSION = "1.7.1";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
@@ -318,6 +318,9 @@ public class SolarHelperClient implements ClientModInitializer {
 
         // Register head outline renderer
         HeadOutlineRenderer.register();
+
+        // Register chest ESP renderer
+        ChestOutlineRenderer.register();
 
         // Register auto-farm keybind (R key, rebindable in Options > Controls > Misc)
         autoFarmKeybind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
