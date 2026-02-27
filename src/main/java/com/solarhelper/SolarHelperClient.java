@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.6.6";
+    private static final String MOD_VERSION = "1.6.7";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
@@ -346,6 +346,18 @@ public class SolarHelperClient implements ClientModInitializer {
         scheduler.execute(this::loadDictionary);
         scheduler.execute(this::checkForUpdates);
 
+        // Show update notification when the player joins a world/server
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.JOIN.register(
+            (handler, sender, client) -> {
+                if (pendingUpdateVersion == null) return;
+                final String ver = pendingUpdateVersion;
+                final String url = pendingUpdateUrl;
+                // Wait 10 seconds after joining so the notification doesn't get buried in join messages
+                scheduler.schedule(() -> client.execute(() -> showUpdateNotification(ver, url)),
+                    10, TimeUnit.SECONDS);
+            }
+        );
+
         // Listen for game messages (server-sent messages like join notifications)
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
             if (overlay) return;
@@ -623,6 +635,26 @@ public class SolarHelperClient implements ClientModInitializer {
         });
     }
 
+    private static void showUpdateNotification(String latestVersion, String downloadUrl) {
+        Text installButton = downloadUrl != null
+            ? Text.literal(" [Install]").formatted(Formatting.AQUA, Formatting.BOLD)
+                .styled(s -> s.withClickEvent(new ClickEvent.RunCommand("/shupdate"))
+                              .withHoverEvent(new net.minecraft.text.HoverEvent.ShowText(
+                                  Text.literal("Click to download v" + latestVersion + " and restart"))))
+            : Text.empty();
+
+        sendLocalNotification(Text.empty()
+            .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+            .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("Update available! ").formatted(Formatting.WHITE))
+            .append(Text.literal("v" + MOD_VERSION).formatted(Formatting.RED))
+            .append(Text.literal(" \u2192 ").formatted(Formatting.GRAY))
+            .append(Text.literal("v" + latestVersion).formatted(Formatting.GREEN, Formatting.BOLD))
+            .append(installButton)
+        );
+    }
+
     private void checkForUpdates() {
         try {
             HttpClient http = HttpClient.newBuilder()
@@ -665,34 +697,9 @@ public class SolarHelperClient implements ClientModInitializer {
 
                 pendingUpdateVersion = latestVersion;
                 pendingUpdateUrl     = downloadUrl;
-                final String finalUrl = downloadUrl;
 
                 LOGGER.info("Update available: v{} -> v{}", MOD_VERSION, latestVersion);
-
-                scheduler.schedule(() -> {
-                    MinecraftClient client = MinecraftClient.getInstance();
-                    client.execute(() -> {
-                        if (client.player == null) return;
-
-                        Text installButton = finalUrl != null
-                            ? Text.literal(" [Install]").formatted(Formatting.AQUA, Formatting.BOLD)
-                                .styled(s -> s.withClickEvent(new ClickEvent.RunCommand("/shupdate"))
-                                              .withHoverEvent(new net.minecraft.text.HoverEvent.ShowText(
-                                                  Text.literal("Click to download v" + latestVersion + " and restart"))))
-                            : Text.empty();
-
-                        sendLocalNotification(Text.empty()
-                            .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
-                            .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
-                            .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
-                            .append(Text.literal("Update available! ").formatted(Formatting.WHITE))
-                            .append(Text.literal("v" + MOD_VERSION).formatted(Formatting.RED))
-                            .append(Text.literal(" \u2192 ").formatted(Formatting.GRAY))
-                            .append(Text.literal("v" + latestVersion).formatted(Formatting.GREEN, Formatting.BOLD))
-                            .append(installButton)
-                        );
-                    });
-                }, 10, TimeUnit.SECONDS);
+                // Notification is shown on next world join via ClientPlayConnectionEvents.JOIN
             }
         } catch (Exception e) {
             LOGGER.debug("Could not check for updates: {}", e.getMessage());
@@ -808,7 +815,7 @@ public class SolarHelperClient implements ClientModInitializer {
      * Sends a client-only notification with blank lines before and after.
      * This NEVER gets sent to the server — it's purely local.
      */
-    private void sendLocalNotification(Text message) {
+    private static void sendLocalNotification(Text message) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player != null) {
             client.player.sendMessage(Text.empty(), false);
