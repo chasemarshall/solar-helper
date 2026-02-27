@@ -20,8 +20,10 @@ public abstract class KeyboardInputMixin extends Input {
             this.movementVector = Vec2f.ZERO;
             MinecraftClient client = MinecraftClient.getInstance();
             if (client.options != null) {
+                client.options.attackKey.setPressed(false);
                 while (client.options.attackKey.wasPressed()) { /* consume */ }
             }
+            return; // prevent auto-farm from re-enabling attack below
         }
 
         // ── Dropper Solver input forcing ──

@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.6.2";
+    private static final String MOD_VERSION = "1.6.3";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
@@ -279,6 +279,10 @@ public class SolarHelperClient implements ClientModInitializer {
     private long lastSellallTime = 0;
     private long lastWelcomeTime = 0;
 
+    // Auto-update state — set by checkForUpdates(), consumed by downloadUpdate()
+    private static volatile String pendingUpdateVersion = null;
+    private static volatile String pendingUpdateUrl     = null;
+
     private KeyBinding autoFarmKeybind;
     private KeyBinding headSeekKeybind;
     private KeyBinding dropperKeybind;
@@ -324,6 +328,19 @@ public class SolarHelperClient implements ClientModInitializer {
             InputUtil.GLFW_KEY_J,
             KeyBinding.Category.MISC
         ));
+
+        // Client-side command that downloads and installs a pending update
+        net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT.register(
+            (dispatcher, registryAccess) -> dispatcher.register(
+                net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal("shupdate")
+                    .executes(ctx -> {
+                        if (pendingUpdateUrl != null && pendingUpdateVersion != null) {
+                            startDownloadUpdate(pendingUpdateVersion, pendingUpdateUrl);
+                        }
+                        return 1;
+                    })
+            )
+        );
 
         // Load dictionary + check for updates in background
         scheduler.execute(this::loadDictionary);
@@ -566,28 +583,24 @@ public class SolarHelperClient implements ClientModInitializer {
                 }
             }
 
+            // Stop auto-farm when any screen is opened (inventory, chat, pause menu, etc.)
+            // The user has to retoggle R to resume — prevents accidental farming while navigating menus.
+            if (autoFarmActive && client.currentScreen != null) {
+                stopAutoFarm();
+                if (client.options != null) client.options.attackKey.setPressed(false);
+                sendLocalNotification(Text.empty()
+                    .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                    .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Auto Farm stopped — press R to resume.").formatted(Formatting.GRAY))
+                );
+            }
+
             // Auto-farm: force attack even when tabbed out (setPressed alone doesn't trigger mining when unfocused)
             if (autoFarmActive && !autoFarmPaused && !inputFrozen && client.player != null && client.interactionManager != null) {
                 if (client.options.attackKey.isPressed()) {
                     ((com.solarhelper.mixin.MinecraftClientAccessor) client).invokeHandleBlockBreaking(true);
                 }
-            }
-
-            // Auto-farm: force inputs even when a screen (e.g. escape menu) is open
-            // KeyboardInput.tick() doesn't run when a screen is open, so we push inputs directly
-            if (config.autoFarmInMenus && autoFarmActive && !autoFarmPaused && !inputFrozen && client.player != null && client.currentScreen != null) {
-                client.player.input.playerInput = new PlayerInput(
-                    true,   // forward
-                    false,  // backward
-                    true,   // left
-                    false,  // right
-                    false,  // jump
-                    false,  // sneak
-                    true    // sprint
-                );
-                ((com.solarhelper.mixin.InputAccessor) client.player.input).setMovementVector(new Vec2f(1.0f, 1.0f));
-                client.options.attackKey.setPressed(true);
-                ((com.solarhelper.mixin.MinecraftClientAccessor) client).invokeHandleBlockBreaking(true);
             }
 
             // Rotation timer (triggers rotation; actual smooth movement is in tickRotation per-frame)
@@ -625,38 +638,128 @@ public class SolarHelperClient implements ClientModInitializer {
 
             if (response.statusCode() == 200) {
                 String body = response.body();
-                // Simple JSON parsing for "tag_name":"v1.2.0"
+
                 Pattern tagPattern = Pattern.compile("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"");
                 Matcher tagMatcher = tagPattern.matcher(body);
-                if (tagMatcher.find()) {
-                    String latestVersion = tagMatcher.group(1);
-                    if (isNewerVersion(latestVersion, MOD_VERSION)) {
-                        // Notify player after they join a world (delay to make sure player exists)
-                        scheduler.schedule(() -> {
-                            MinecraftClient client = MinecraftClient.getInstance();
-                            client.execute(() -> {
-                                if (client.player != null) {
-                                    sendLocalNotification(Text.empty()
-                                        .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
-                                        .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
-                                        .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
-                                        .append(Text.literal("Solar Helper update available! ").formatted(Formatting.WHITE))
-                                        .append(Text.literal("v" + MOD_VERSION).formatted(Formatting.RED))
-                                        .append(Text.literal(" -> ").formatted(Formatting.GRAY))
-                                        .append(Text.literal("v" + latestVersion).formatted(Formatting.GREEN, Formatting.BOLD))
-                                    );
-                                }
-                            });
-                        }, 10, TimeUnit.SECONDS);
-                        LOGGER.info("Update available: v{} -> v{}", MOD_VERSION, latestVersion);
-                    } else {
-                        LOGGER.info("Solar Helper is up to date (v{})", MOD_VERSION);
+                if (!tagMatcher.find()) return;
+                String latestVersion = tagMatcher.group(1);
+
+                if (!isNewerVersion(latestVersion, MOD_VERSION)) {
+                    LOGGER.info("Solar Helper is up to date (v{})", MOD_VERSION);
+                    return;
+                }
+
+                // Find the main jar download URL (not -sources)
+                Pattern assetPattern = Pattern.compile("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.jar)\"");
+                Matcher assetMatcher = assetPattern.matcher(body);
+                String downloadUrl = null;
+                while (assetMatcher.find()) {
+                    String url = assetMatcher.group(1);
+                    if (!url.contains("sources")) {
+                        downloadUrl = url;
+                        break;
                     }
                 }
+
+                pendingUpdateVersion = latestVersion;
+                pendingUpdateUrl     = downloadUrl;
+                final String finalUrl = downloadUrl;
+
+                LOGGER.info("Update available: v{} -> v{}", MOD_VERSION, latestVersion);
+
+                scheduler.schedule(() -> {
+                    MinecraftClient client = MinecraftClient.getInstance();
+                    client.execute(() -> {
+                        if (client.player == null) return;
+
+                        Text installButton = finalUrl != null
+                            ? Text.literal(" [Install]").formatted(Formatting.AQUA, Formatting.BOLD)
+                                .styled(s -> s.withClickEvent(new ClickEvent.RunCommand("/shupdate"))
+                                              .withHoverEvent(new net.minecraft.text.HoverEvent.ShowText(
+                                                  Text.literal("Click to download v" + latestVersion + " and restart"))))
+                            : Text.empty();
+
+                        sendLocalNotification(Text.empty()
+                            .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                            .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal("Update available! ").formatted(Formatting.WHITE))
+                            .append(Text.literal("v" + MOD_VERSION).formatted(Formatting.RED))
+                            .append(Text.literal(" \u2192 ").formatted(Formatting.GRAY))
+                            .append(Text.literal("v" + latestVersion).formatted(Formatting.GREEN, Formatting.BOLD))
+                            .append(installButton)
+                        );
+                    });
+                }, 10, TimeUnit.SECONDS);
             }
         } catch (Exception e) {
             LOGGER.debug("Could not check for updates: {}", e.getMessage());
         }
+    }
+
+    private void startDownloadUpdate(String version, String downloadUrl) {
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        // Show "downloading..." feedback immediately
+        client.execute(() -> sendLocalNotification(Text.empty()
+            .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+            .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+            .append(Text.literal("Downloading v" + version + "...").formatted(Formatting.GRAY))
+        ));
+
+        scheduler.execute(() -> {
+            try {
+                java.nio.file.Path modsDir = net.fabricmc.loader.api.FabricLoader.getInstance()
+                    .getGameDir().resolve("mods");
+                java.nio.file.Path newJar = modsDir.resolve("solar-helper-" + version + ".jar");
+
+                // Download
+                HttpClient http = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.ALWAYS)
+                    .connectTimeout(java.time.Duration.ofSeconds(15))
+                    .build();
+                HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(downloadUrl))
+                    .timeout(java.time.Duration.ofSeconds(60))
+                    .build();
+                HttpResponse<java.nio.file.Path> resp = http.send(req, HttpResponse.BodyHandlers.ofFile(newJar));
+
+                if (resp.statusCode() != 200) {
+                    client.execute(() -> sendLocalNotification(
+                        Text.literal("Download failed (HTTP " + resp.statusCode() + ")").formatted(Formatting.RED)));
+                    java.nio.file.Files.deleteIfExists(newJar);
+                    return;
+                }
+
+                // Delete old solar-helper jars (keep the one we just downloaded)
+                try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.list(modsDir)) {
+                    stream.filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.matches("solar-helper-[\\d.]+\\.jar") && !p.equals(newJar);
+                    }).forEach(p -> {
+                        try { java.nio.file.Files.delete(p); } catch (Exception ignored) {}
+                    });
+                }
+
+                // Clear pending state so the button doesn't fire twice
+                pendingUpdateVersion = null;
+                pendingUpdateUrl     = null;
+
+                client.execute(() -> sendLocalNotification(Text.empty()
+                    .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                    .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                    .append(Text.literal("Solar Helper updated to v" + version + "! ").formatted(Formatting.GREEN, Formatting.BOLD))
+                    .append(Text.literal("Restart Minecraft to apply.").formatted(Formatting.WHITE))
+                ));
+
+            } catch (Exception e) {
+                LOGGER.error("Update download failed", e);
+                client.execute(() -> sendLocalNotification(
+                    Text.literal("Update failed: " + e.getMessage()).formatted(Formatting.RED)));
+            }
+        });
     }
 
     private void loadDictionary() {
