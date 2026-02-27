@@ -12,5 +12,7 @@ public abstract class GameRendererMixin {
     @Inject(method = "render", at = @At("HEAD"))
     private void onRender(CallbackInfo ci) {
         SolarHelperClient.tickRotation();
+        SolarHelperClient.tickHeadSeek();
+        SolarHelperClient.tickDropperRotation();
     }
 }

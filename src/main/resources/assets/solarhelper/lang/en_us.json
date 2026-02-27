@@ -1,4 +1,6 @@
 {
   "key.categories.solarhelper.keybinds": "Solar Helper",
-  "key.solarhelper.autofarm": "Toggle Auto Farm"
+  "key.solarhelper.autofarm": "Toggle Auto Farm",
+  "key.solarhelper.headseek": "Toggle Head Seeker",
+  "key.solarhelper.dropper": "Toggle Dropper Solver"
 }

@@ -20,12 +20,15 @@ public class SolarHelperConfig {
     public boolean sellallEnabled = true;
     public boolean mathSolverEnabled = true;
     public boolean unscrambleEnabled = true;
+    public boolean unreverseEnabled = true;
+    public boolean readSolverEnabled = true;
     public boolean autoTypeEnabled = true;
 
     // Human-like behavior
     public boolean freezeInputEnabled = true;
     public boolean typosEnabled = false;
     public boolean mathFuzzEnabled = true;
+    public boolean aiWelcomeEnabled = false;
 
     // OpenRouter API key (optional, used as fallback for unscrambling)
     public String openRouterApiKey = "";
@@ -33,11 +36,26 @@ public class SolarHelperConfig {
     // Visuals
     public boolean playerOutlinesEnabled = false;
     public boolean headOutlinesEnabled = true;
+    public boolean headSeekEnabled = false;
+
+    // Auto Island (/is menu)
+    public boolean autoIslandEnabled = true;
+    public int autoIslandDelayMs = 300;
+
+    // Auto Raffle (click raffle messages)
+    public boolean autoRaffleEnabled = true;
+
+    // Safety
+    public boolean nameMentionStopEnabled = true;
+
+    // Dropper Solver
+    public boolean dropperEnabled = true;
 
     // Auto Farm
     public boolean autoFarmEnabled = true;
     public int autoFarmRotationIntervalMs = 10000;
     public boolean autoFarmRotateRight = true;
+    public boolean autoFarmInMenus = false;
 
     // Delay settings (ms)
     public int welcomeMinDelayMs = 1000;

@@ -5,7 +5,9 @@
   "client": [
     "KeyboardInputMixin",
     "GameRendererMixin",
-    "EntityGlowMixin"
+    "EntityGlowMixin",
+    "MinecraftClientAccessor",
+    "InputAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
