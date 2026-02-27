@@ -129,12 +129,9 @@ public abstract class KeyboardInputMixin extends Input {
                 client.options.attackKey.setPressed(true);
             }
         } else {
+            // Release keys once when auto-farm transitions to inactive (no-op otherwise).
+            // Do NOT set attackKey=false here every tick — that would break normal mining.
             SolarHelperClient.releaseAutoFarmKeys();
-            // Also stop attacking during brief rotation pauses (autoFarmPaused = true but not fully stopped)
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.options != null) {
-                client.options.attackKey.setPressed(false);
-            }
         }
     }
 }
