@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.6.7";
+    private static final String MOD_VERSION = "1.6.8";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
