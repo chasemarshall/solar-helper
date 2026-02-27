@@ -85,13 +85,10 @@ public class HeadOutlineRenderer {
 
         Vec3d cam = client.gameRenderer.getCamera().getCameraPos();
         MatrixStack matrices = context.matrices();
-
-        // Use the context's vertex consumer provider with our custom no-depth-test layer.
-        // The context's consumers handle the actual draw call during the render pipeline flush.
         VertexConsumerProvider consumers = context.consumers();
         VertexConsumer lineConsumer = consumers.getBuffer(LINES_NO_DEPTH_LAYER);
 
-        // Yellow color (ARGB: 0xAARRGGBB)
+        // Yellow color (ARGB)
         int color = 0xFFFFE621;
 
         for (BlockPos pos : cachedHeadPositions) {
@@ -112,7 +109,6 @@ public class HeadOutlineRenderer {
         int chunkX = playerPos.getX() >> 4;
         int chunkZ = playerPos.getZ() >> 4;
 
-        // Scan a 13x13 chunk area (~200 block radius)
         for (int cx = chunkX - 6; cx <= chunkX + 6; cx++) {
             for (int cz = chunkZ - 6; cz <= chunkZ + 6; cz++) {
                 WorldChunk chunk = client.world.getChunk(cx, cz);

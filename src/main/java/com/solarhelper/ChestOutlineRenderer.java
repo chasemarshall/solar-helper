@@ -69,7 +69,7 @@ public class ChestOutlineRenderer {
         VertexConsumerProvider consumers = context.consumers();
         VertexConsumer lineConsumer = consumers.getBuffer(LINES_NO_DEPTH_LAYER);
 
-        // Cyan outline
+        // Cyan color
         int color = 0xFF00E5FF;
 
         for (BlockPos pos : cachedChestPositions) {
