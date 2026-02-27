@@ -51,6 +51,13 @@ public class SolarHelperConfig {
     // Dropper Solver
     public boolean dropperEnabled = true;
 
+    // Command shortcuts (5 slots, all unbound by default — bind keys in Controls > Misc)
+    public String shortcut1Command = "";
+    public String shortcut2Command = "";
+    public String shortcut3Command = "";
+    public String shortcut4Command = "";
+    public String shortcut5Command = "";
+
     // Auto Farm
     public boolean autoFarmEnabled = true;
     public int autoFarmRotationIntervalMs = 10000;

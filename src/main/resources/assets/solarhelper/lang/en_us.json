@@ -2,5 +2,10 @@
   "key.categories.solarhelper.keybinds": "Solar Helper",
   "key.solarhelper.autofarm": "Toggle Auto Farm",
   "key.solarhelper.headseek": "Toggle Head Seeker",
-  "key.solarhelper.dropper": "Toggle Dropper Solver"
+  "key.solarhelper.dropper": "Toggle Dropper Solver",
+  "key.solarhelper.shortcut1": "Command Shortcut 1",
+  "key.solarhelper.shortcut2": "Command Shortcut 2",
+  "key.solarhelper.shortcut3": "Command Shortcut 3",
+  "key.solarhelper.shortcut4": "Command Shortcut 4",
+  "key.solarhelper.shortcut5": "Command Shortcut 5"
 }

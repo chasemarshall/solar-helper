@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.6.9";
+    private static final String MOD_VERSION = "1.7.0";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
@@ -114,17 +114,30 @@ public class SolarHelperClient implements ClientModInitializer {
     private static int dropperSteerCounter  = 0;
     private static final int DROPPER_STEER_TICKS = 4;
 
+    // Grace period before allowing isOnGround() to stop the dropper.
+    // Prevents immediate stop when J is pressed while still standing on the platform.
+    private static int dropperGroundGrace = 0;
+    private static final int DROPPER_GRACE_TICKS = 20; // 1 second
+
+    // Retry water scan every N ticks in case chunks weren't loaded yet on first scan
+    private static int dropperScanCounter = 0;
+    private static final int DROPPER_SCAN_INTERVAL = 20; // retry every second
+    private static int dropperNoWaterTicks = 0; // how many ticks we've had no water target
+
     public static boolean isDropperActive() { return dropperActive; }
     public static int getDropperForward()   { return dropperForward; }
     public static int getDropperSideways()  { return dropperSideways; }
 
     private static void startDropper() {
-        dropperActive     = true;
-        dropperForward    = 0;
-        dropperSideways   = 0;
+        dropperActive       = true;
+        dropperForward      = 0;
+        dropperSideways     = 0;
         dropperSteerCounter = 0;
-        cachedWaterCenter = null;
-        dropperLastFrameNs = 0; // will be initialised on first render frame
+        dropperGroundGrace  = DROPPER_GRACE_TICKS;
+        dropperScanCounter  = 0;
+        dropperNoWaterTicks = 0;
+        cachedWaterCenter   = null;
+        dropperLastFrameNs  = 0; // will be initialised on first render frame
     }
 
     public static void stopDropper() {
@@ -286,6 +299,7 @@ public class SolarHelperClient implements ClientModInitializer {
     private KeyBinding autoFarmKeybind;
     private KeyBinding headSeekKeybind;
     private KeyBinding dropperKeybind;
+    private KeyBinding[] shortcutKeybinds;
 
     // Single shared thread for all delayed actions
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -328,6 +342,17 @@ public class SolarHelperClient implements ClientModInitializer {
             InputUtil.GLFW_KEY_J,
             KeyBinding.Category.MISC
         ));
+
+        // Register 5 command shortcut keybinds (all unbound by default)
+        shortcutKeybinds = new KeyBinding[5];
+        for (int i = 0; i < 5; i++) {
+            shortcutKeybinds[i] = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.solarhelper.shortcut" + (i + 1),
+                InputUtil.Type.KEYSYM,
+                -1,
+                KeyBinding.Category.MISC
+            ));
+        }
 
         // Client-side command that downloads and installs a pending update
         net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT.register(
@@ -500,6 +525,24 @@ public class SolarHelperClient implements ClientModInitializer {
                 }
             }
 
+            // Command shortcuts
+            if (client.player != null && shortcutKeybinds != null) {
+                String[] cmds = {
+                    config.shortcut1Command, config.shortcut2Command, config.shortcut3Command,
+                    config.shortcut4Command, config.shortcut5Command
+                };
+                for (int i = 0; i < shortcutKeybinds.length; i++) {
+                    if (shortcutKeybinds[i].wasPressed() && cmds[i] != null && !cmds[i].isBlank()) {
+                        String cmd = cmds[i].trim();
+                        if (cmd.startsWith("/")) {
+                            client.player.networkHandler.sendChatCommand(cmd.substring(1));
+                        } else {
+                            client.player.networkHandler.sendChatCommand(cmd);
+                        }
+                    }
+                }
+            }
+
             // Toggle dropper solver on keybind press
             if (dropperKeybind.wasPressed()) {
                 if (!config.dropperEnabled) {
@@ -534,8 +577,11 @@ public class SolarHelperClient implements ClientModInitializer {
 
             // Dropper Solver tick: compute steering inputs each tick while active
             if (dropperActive && client.player != null && client.world != null) {
-                // Auto-stop when player lands or enters water
-                if (client.player.isOnGround() || client.player.isTouchingWater()) {
+                // Tick down the grace period before allowing landing detection
+                if (dropperGroundGrace > 0) dropperGroundGrace--;
+
+                // Auto-stop when player lands or enters water (only after grace period)
+                if (dropperGroundGrace == 0 && (client.player.isOnGround() || client.player.isTouchingWater())) {
                     stopDropper();
                     sendLocalNotification(Text.empty()
                         .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
@@ -545,8 +591,11 @@ public class SolarHelperClient implements ClientModInitializer {
                         .append(Text.literal("landed!").formatted(Formatting.GREEN, Formatting.BOLD))
                     );
                 } else {
-                    // Find water center once per activation (the pool doesn't move)
-                    if (cachedWaterCenter == null) {
+                    // Scan for water every DROPPER_SCAN_INTERVAL ticks.
+                    // Retrying handles the case where the target chunks weren't loaded on first activation.
+                    dropperScanCounter++;
+                    if (cachedWaterCenter == null && dropperScanCounter >= DROPPER_SCAN_INTERVAL) {
+                        dropperScanCounter = 0;
                         cachedWaterCenter = DropperSolver.findWaterCenter(
                             client.world,
                             client.player.getX(),
@@ -564,7 +613,20 @@ public class SolarHelperClient implements ClientModInitializer {
                                         cachedWaterCenter[0], cachedWaterCenter[1], cachedWaterCenter[2])
                                 ).formatted(Formatting.AQUA))
                             );
+                        } else {
+                            dropperNoWaterTicks += DROPPER_SCAN_INTERVAL;
+                            // Warn after 5 seconds of failing to find water
+                            if (dropperNoWaterTicks == 100) {
+                                sendLocalNotification(Text.empty()
+                                    .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                                    .append(Text.literal("\u26A1").formatted(Formatting.YELLOW))
+                                    .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                                    .append(Text.literal("No water detected below — falling straight.").formatted(Formatting.YELLOW))
+                                );
+                            }
                         }
+                    } else if (cachedWaterCenter == null) {
+                        dropperScanCounter = Math.max(dropperScanCounter, DROPPER_SCAN_INTERVAL - 1); // first scan fast
                     }
 
                     if (cachedWaterCenter != null) {
