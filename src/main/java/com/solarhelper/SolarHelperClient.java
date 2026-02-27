@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
 public class SolarHelperClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("solarhelper");
 
-    private static final String MOD_VERSION = "1.6.4";
+    private static final String MOD_VERSION = "1.6.5";
     // Change this to your GitHub repo when you create it
     private static final String GITHUB_REPO = "chasemarshall/solar-helper";
 
@@ -1263,6 +1263,22 @@ public class SolarHelperClient implements ClientModInitializer {
      */
     private long mathDelay(long a, String op, long b, SolarHelperConfig config) {
         ThreadLocalRandom rand = ThreadLocalRandom.current();
+
+        // Trivially obvious answers — you see it instantly, no mental work needed.
+        // e.g. 3*0=0, 0+99=99, 7*1=7, 100-100=0, 0/5=0
+        boolean multOrDiv = op.equals("*") || op.equals("x") || op.equals("/");
+        boolean addOrSub  = op.equals("+") || op.equals("-");
+        boolean trivial =
+            (b == 0 && (multOrDiv || addOrSub))    // anything * / + - 0
+         || (a == 0 && (multOrDiv || op.equals("+"))) // 0 * / + anything
+         || (b == 1 && multOrDiv)                   // anything * / 1
+         || (a == 1 && (op.equals("*") || op.equals("x"))) // 1 * anything
+         || (a == b && op.equals("-"));             // x - x = 0
+        if (trivial) {
+            // Still pause briefly to read the question, but the answer is instant
+            return 600 + rand.nextLong(700); // ~0.6–1.3s total
+        }
+
         long base = config.challengeMinDelayMs;
         long range = Math.max(0, config.challengeMaxDelayMs - config.challengeMinDelayMs);
 
